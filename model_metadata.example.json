@@ -1,0 +1,1 @@
+{"model_name":"BRD4 trained QSAR estimator","target":"pIC50","fingerprint":"Morgan","radius":2,"n_bits":2048,"use_chirality":false,"model_file":"models/brd4_model.joblib","note":"EXAMPLE ONLY: replace settings with exact original training configuration before inference"}
