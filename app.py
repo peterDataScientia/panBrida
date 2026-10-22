@@ -25,8 +25,8 @@ with st.sidebar:
         except Exception as exc:
             st.error(f"Invalid metadata: {exc}")
     radius = st.number_input("Morgan radius", 1, 4, int(metadata.get("radius", 2)))
-    n_bits = st.number_input("Morgan bits", 128, 8192, int(metadata.get("n_bits", 2048)), step=128)
-    st.caption("Confirm these values against the original training pipeline.")
+    n_bits = st.number_input("Morgan bits", 128, 8192, int(metadata.get("n_bits", 1024)), step=128)
+    st.caption("The BRD4 Colab notebook references an SVR–Morgan1024 artifact; verify radius and chirality from the saved training metadata.")
     st.markdown("**Model output:** pIC50 only if the saved model was trained on pIC50.")
     model = None
     if model_file:
@@ -83,10 +83,15 @@ def screen(items):
         rows.append(row)
     if model is not None and vectors:
         try:
+            estimator = model
+            if isinstance(model, dict):
+                estimator = next((model[k] for k in ("model", "estimator", "svr", "regressor", "pipeline") if k in model and hasattr(model[k], "predict")), None)
+                if estimator is None:
+                    raise ValueError("Model bundle is a dictionary without a recognized fitted estimator; inspect its keys and training notebook")
             x = np.vstack(vectors)
-            if hasattr(model, "n_features_in_") and int(model.n_features_in_) != x.shape[1]:
-                raise ValueError(f"Model expects {model.n_features_in_} features, but fingerprint has {x.shape[1]}")
-            predictions = np.asarray(model.predict(x)).reshape(-1)
+            if hasattr(estimator, "n_features_in_") and int(estimator.n_features_in_) != x.shape[1]:
+                raise ValueError(f"Model expects {estimator.n_features_in_} features, but fingerprint has {x.shape[1]}")
+            predictions = np.asarray(estimator.predict(x)).reshape(-1)
             if len(predictions) != len(positions):
                 raise ValueError("Unexpected number of model predictions")
             for position, value in zip(positions, predictions):
