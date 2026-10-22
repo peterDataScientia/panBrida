@@ -169,6 +169,34 @@ with generation:
             st.json(stats)
             st.metric("Unique-valid yield", f"{100*stats['unique_valid']/stats['requested']:.1f}%")
             st.download_button("Download generation audit", json.dumps(stats, indent=2), "panbrida_generation_audit.json", "application/json")
+        generated_df = st.session_state["rnn_generated"]
+        valid_smiles = generated_df.loc[generated_df["Status"] == "Valid", "SMILES"].tolist()
+        if len(valid_smiles) > 1:
+            fps = [rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048).GetFingerprint(Chem.MolFromSmiles(s)) for s in valid_smiles]
+            similarities = []
+            for i in range(len(fps)):
+                similarities.extend(DataStructs.BulkTanimotoSimilarity(fps[i], fps[i+1:]))
+            if similarities:
+                st.metric("Mean pairwise Tanimoto similarity (Morgan2048)", f"{np.mean(similarities):.3f}")
+                st.caption("Lower similarity suggests greater fingerprint diversity; this is not evidence of BRD4 activity.")
+        reference = st.file_uploader("Optional BRD4 training CSV for novelty audit", type=["csv"], key="rnn_reference")
+        if reference is not None and valid_smiles:
+            try:
+                training = pd.read_csv(reference)
+                columns = [c for c in training.columns if "smiles" in c.lower()]
+                if not columns:
+                    st.error("Training CSV must contain a SMILES column.")
+                else:
+                    known = set()
+                    for smi in training[columns[0]].dropna().astype(str):
+                        mol = Chem.MolFromSmiles(smi)
+                        if mol is not None:
+                            known.add(Chem.MolToSmiles(mol, isomericSmiles=True))
+                    novel = sum(s not in known for s in valid_smiles)
+                    st.metric("Novel versus uploaded training structures", f"{novel}/{len(valid_smiles)} ({100*novel/len(valid_smiles):.1f}%)")
+                    st.caption(f"Compared with {len(known)} distinct valid reference structures; exact canonical-SMILES novelty only.")
+            except Exception as exc:
+                st.error(f"Reference dataset audit failed: {exc}")
         show_results(st.session_state["rnn_generated"])
     st.divider()
     st.subheader("Structure-based analogue generation")
