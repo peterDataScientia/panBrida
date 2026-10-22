@@ -144,13 +144,15 @@ with batch:
 with generation:
     st.subheader("Trained BRD4 SMILES-RNN")
     st.caption("Uses the actual saved PyTorch checkpoint architecture from the BRD4 Colab notebook; no retraining.")
+    st.markdown("[Get the trained checkpoint from your connected Google Drive](https://drive.google.com/file/d/1XqSL8l2t4qn_VZUCa3MuX9DmnXEwELMj/view)")
     checkpoint = st.file_uploader("Upload BRD4_generated.trained.pt", type=["pt"], key="rnn_checkpoint")
     rnn_count = st.slider("RNN sampling batch size", 10, 300, 100, 10)
     rnn_temp = st.slider("Sampling temperature", 0.5, 1.5, 1.0, 0.05)
-    if st.button("Generate with trained RNN", disabled=checkpoint is None):
+    local_checkpoint = Path("models/BRD4_generated.trained.pt")
+    if st.button("Generate with trained RNN", disabled=checkpoint is None and not local_checkpoint.exists()):
         try:
             from rnn_inference import load_generator, generate
-            generator = load_generator(checkpoint.getvalue())
+            generator = load_generator(checkpoint.getvalue() if checkpoint is not None else local_checkpoint.read_bytes())
             with st.spinner("Sampling trained BRD4 generator..."):
                 candidates = generate(generator, count=rnn_count, temperature=rnn_temp, seed=2026)
             st.session_state["rnn_generated"] = screen(candidates)
