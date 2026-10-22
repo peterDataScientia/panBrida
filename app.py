@@ -156,12 +156,19 @@ with generation:
             from rnn_inference import load_generator, generate
             generator = load_generator(checkpoint.getvalue() if checkpoint is not None else local_checkpoint.read_bytes())
             with st.spinner("Sampling trained BRD4 generator..."):
-                candidates = generate(generator, count=rnn_count, temperature=rnn_temp, seed=2026)
+                candidates, generation_stats = generate(generator, count=rnn_count, temperature=rnn_temp, seed=2026)
             st.session_state["rnn_generated"] = screen(candidates)
+            st.session_state["rnn_stats"] = generation_stats
             st.success(f"{len(candidates)} unique valid molecules generated from {rnn_count} samples.")
         except Exception as exc:
             st.error(f"RNN inference failed: {exc}")
     if "rnn_generated" in st.session_state:
+        stats = st.session_state.get("rnn_stats")
+        if stats:
+            st.write("Raw generation audit")
+            st.json(stats)
+            st.metric("Unique-valid yield", f"{100*stats['unique_valid']/stats['requested']:.1f}%")
+            st.download_button("Download generation audit", json.dumps(stats, indent=2), "panbrida_generation_audit.json", "application/json")
         show_results(st.session_state["rnn_generated"])
     st.divider()
     st.subheader("Structure-based analogue generation")
