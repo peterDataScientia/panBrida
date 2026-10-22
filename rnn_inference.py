@@ -47,11 +47,19 @@ def generate(model, count=40, max_length=120, temperature=1.0, seed=2026):
         idx=nxt[:,None]
         if bool(ended.all()):break
     seen=set();out=[]
+    stats={"requested":int(count),"unfinished":0,"invalid":0,"duplicates":0,"unique_valid":0}
     for i,s in enumerate(strings):
-        if not ended[i]:continue
+        if not ended[i]:
+            stats["unfinished"]+=1
+            continue
         mol=Chem.MolFromSmiles("".join(s))
-        if mol is None:continue
+        if mol is None:
+            stats["invalid"]+=1
+            continue
         smi=Chem.MolToSmiles(mol,isomericSmiles=True)
         if smi not in seen:
             seen.add(smi);out.append((f"RNN_{len(out)+1:03d}",smi))
-    return out
+        else:
+            stats["duplicates"]+=1
+    stats["unique_valid"]=len(out)
+    return out,stats
