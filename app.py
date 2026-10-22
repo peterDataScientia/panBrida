@@ -200,6 +200,49 @@ with generation:
                 st.error(f"Reference dataset audit failed: {exc}")
         show_results(st.session_state["rnn_generated"])
     st.divider()
+    st.subheader("Temperature benchmark")
+    st.caption("Compare 0.8, 0.9 and 1.0 using equal sample counts and independent seeds. No retraining.")
+    benchmark_n = st.slider("Samples per replicate", 100, 500, 300, 50, key="benchmark_n")
+    benchmark_reps = st.slider("Replicates per temperature", 2, 10, 3, key="benchmark_reps")
+    if st.button("Run temperature benchmark", disabled=checkpoint is None and not local_checkpoint.exists()):
+        try:
+            from rnn_inference import load_generator, generate
+            model_rnn = load_generator(checkpoint.getvalue() if checkpoint is not None else local_checkpoint.read_bytes())
+            rows_bench = []
+            fpgen_bench = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+            progress = st.progress(0)
+            total = 3 * benchmark_reps
+            for j, temperature in enumerate((0.8, 0.9, 1.0)):
+                for rep in range(benchmark_reps):
+                    seed = 2026 + rep
+                    molecules, counts = generate(model_rnn, count=benchmark_n, temperature=temperature, seed=seed)
+                    fps = [fpgen_bench.GetFingerprint(Chem.MolFromSmiles(smi)) for _, smi in molecules]
+                    sim_sum, sim_n = 0.0, 0
+                    for k, fp in enumerate(fps[:-1]):
+                        sims = DataStructs.BulkTanimotoSimilarity(fp, fps[k+1:])
+                        sim_sum += sum(sims)
+                        sim_n += len(sims)
+                    rows_bench.append({
+                        "Temperature": temperature, "Replicate": rep + 1, "Seed": seed,
+                        **counts,
+                        "Raw validity %": 100 * (counts["unique_valid"] + counts["duplicates"]) / counts["requested"],
+                        "Unique-valid yield %": 100 * counts["unique_valid"] / counts["requested"],
+                        "Mean pairwise Tanimoto": sim_sum / sim_n if sim_n else np.nan
+                    })
+                    progress.progress((j * benchmark_reps + rep + 1) / total)
+            st.session_state["temperature_benchmark"] = pd.DataFrame(rows_bench)
+        except Exception as exc:
+            st.error(f"Benchmark failed: {exc}")
+    if "temperature_benchmark" in st.session_state:
+        bench = st.session_state["temperature_benchmark"]
+        st.dataframe(bench, hide_index=True, use_container_width=True)
+        summary = bench.groupby("Temperature")[["Raw validity %", "Unique-valid yield %", "Mean pairwise Tanimoto"]].agg(["mean", "std"])
+        st.subheader("Mean and SD across seeds")
+        st.dataframe(summary, use_container_width=True)
+        st.caption("Prefer high unique-valid yield and low similarity; inspect trade-offs rather than choosing a temperature from validity alone.")
+        st.download_button("Download benchmark CSV", bench.to_csv(index=False).encode(),
+                           "panbrida_temperature_benchmark.csv", "text/csv")
+    st.divider()
     st.subheader("Structure-based analogue generation")
     st.caption("RDKit chemical edits on supplied seed structures. This is NOT the trained SMILES-RNN generator.")
     seed_text = st.text_area("Seed SMILES (one per line, optional ID)", height=140, key="seed_input", placeholder="CCOc1ccccc1 Seed_01")
