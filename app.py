@@ -147,7 +147,8 @@ with generation:
     st.markdown("[Get the trained checkpoint from your connected Google Drive](https://drive.google.com/file/d/1XqSL8l2t4qn_VZUCa3MuX9DmnXEwELMj/view)")
     checkpoint = st.file_uploader("Upload BRD4_generated.trained.pt", type=["pt"], key="rnn_checkpoint")
     rnn_count = st.slider("RNN sampling batch size", 10, 300, 100, 10)
-    rnn_temp = st.slider("Sampling temperature", 0.5, 1.5, 1.0, 0.05)
+    rnn_temp = st.slider("Sampling temperature", 0.5, 1.5, 0.8, 0.05)
+    st.caption("Default 0.8 is a hypothesis for improving validity, not yet benchmarked. Compare raw validity and diversity across temperatures.")
     local_checkpoint = Path("models/BRD4_generated.trained.pt")
     if not local_checkpoint.exists() and checkpoint is None:
         st.info("Select the checkpoint from the Drive link above. The trained checkpoint is not yet bundled in this GitHub repository.")
