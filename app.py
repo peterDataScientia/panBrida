@@ -11,7 +11,7 @@ from rdkit.Chem import Descriptors, QED, rdMolDescriptors, rdFingerprintGenerato
 st.set_page_config(page_title="PanBrida | BRD4 Discovery", page_icon="🧬", layout="wide")
 st.title("🧬 PanBrida")
 st.caption("BRD4 Paper 2 | Structure screening, QSAR inference and candidate prioritization")
-st.warning("Research prototype. No validated BRD4 model is bundled; predictions require a trusted, fitted artifact and matching training settings.")
+st.info("Trained BRD4 SMILES-RNN generation is supported. Load the saved checkpoint in the Generate tab; QSAR predictions require the separately trained SVR artifact.")
 
 with st.sidebar:
     st.header("QSAR configuration")
@@ -143,12 +143,14 @@ with batch:
 
 with generation:
     st.subheader("Trained BRD4 SMILES-RNN")
-    st.caption("Uses the actual saved PyTorch checkpoint architecture from the BRD4 Colab notebook; no retraining.")
+    st.caption("Verified checkpoint format: 37-token vocabulary, 128-dimensional embeddings, 256 hidden units, 2 GRU layers. No retraining required.")
     st.markdown("[Get the trained checkpoint from your connected Google Drive](https://drive.google.com/file/d/1XqSL8l2t4qn_VZUCa3MuX9DmnXEwELMj/view)")
     checkpoint = st.file_uploader("Upload BRD4_generated.trained.pt", type=["pt"], key="rnn_checkpoint")
     rnn_count = st.slider("RNN sampling batch size", 10, 300, 100, 10)
     rnn_temp = st.slider("Sampling temperature", 0.5, 1.5, 1.0, 0.05)
     local_checkpoint = Path("models/BRD4_generated.trained.pt")
+    if not local_checkpoint.exists() and checkpoint is None:
+        st.info("Select the checkpoint from the Drive link above. The trained checkpoint is not yet bundled in this GitHub repository.")
     if st.button("Generate with trained RNN", disabled=checkpoint is None and not local_checkpoint.exists()):
         try:
             from rnn_inference import load_generator, generate
