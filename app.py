@@ -142,6 +142,24 @@ with batch:
 
 
 with generation:
+    st.subheader("Trained BRD4 SMILES-RNN")
+    st.caption("Uses the actual saved PyTorch checkpoint architecture from the BRD4 Colab notebook; no retraining.")
+    checkpoint = st.file_uploader("Upload BRD4_generated.trained.pt", type=["pt"], key="rnn_checkpoint")
+    rnn_count = st.slider("RNN sampling batch size", 10, 300, 100, 10)
+    rnn_temp = st.slider("Sampling temperature", 0.5, 1.5, 1.0, 0.05)
+    if st.button("Generate with trained RNN", disabled=checkpoint is None):
+        try:
+            from rnn_inference import load_generator, generate
+            generator = load_generator(checkpoint.getvalue())
+            with st.spinner("Sampling trained BRD4 generator..."):
+                candidates = generate(generator, count=rnn_count, temperature=rnn_temp, seed=2026)
+            st.session_state["rnn_generated"] = screen(candidates)
+            st.success(f"{len(candidates)} unique valid molecules generated from {rnn_count} samples.")
+        except Exception as exc:
+            st.error(f"RNN inference failed: {exc}")
+    if "rnn_generated" in st.session_state:
+        show_results(st.session_state["rnn_generated"])
+    st.divider()
     st.subheader("Structure-based analogue generation")
     st.caption("RDKit chemical edits on supplied seed structures. This is NOT the trained SMILES-RNN generator.")
     seed_text = st.text_area("Seed SMILES (one per line, optional ID)", height=140, key="seed_input", placeholder="CCOc1ccccc1 Seed_01")
