@@ -44,7 +44,7 @@ with st.sidebar:
     st.write("**Model loaded:**", "Yes" if model is not None else "No")
     st.write("**Applicability domain:**", "Not yet calibrated")
 
-single, batch, about = st.tabs(["SMILES screening", "Batch CSV", "Methodology"])
+single, batch, generation, about = st.tabs(["SMILES screening", "Batch CSV", "Generate molecules", "Methodology"])
 
 def parse_lines(raw):
     items = []
@@ -135,9 +135,77 @@ with batch:
     if "batch_results" in st.session_state:
         show_results(st.session_state["batch_results"])
 
+
+with generation:
+    st.subheader("Structure-based analogue generation")
+    st.caption("RDKit chemical edits on supplied seed structures. This is NOT the trained SMILES-RNN generator.")
+    seed_text = st.text_area("Seed SMILES (one per line, optional ID)", height=140, key="seed_input", placeholder="CCOc1ccccc1 Seed_01")
+    n_target = st.slider("Maximum unique generated candidates", 5, 200, 40, step=5)
+    random_seed = st.number_input("Random seed", min_value=0, value=2026, step=1)
+    mw_limit = st.slider("Maximum molecular weight", 250, 900, 650, step=25)
+    qed_min = st.slider("Minimum QED", 0.0, 1.0, 0.3, step=0.05)
+    st.caption("Operations: replace a terminal halogen or alkyl substituent, append a small terminal substituent to available aromatic carbon, or mutate terminal halogens. Products are sanitized and deduplicated.")
+    if st.button("Generate analogues", type="primary"):
+        import random
+        rng = random.Random(int(random_seed))
+        seeds = parse_lines(seed_text)
+        edits = ["F", "Cl", "C", "O", "N"]
+        products, seen = [], set()
+        valid_seeds = []
+        for _, smi in seeds:
+            mol = Chem.MolFromSmiles(smi)
+            if mol:
+                canonical = Chem.MolToSmiles(mol, isomericSmiles=True)
+                seen.add(canonical)
+                valid_seeds.append(mol)
+        if not valid_seeds:
+            st.error("Provide at least one valid seed SMILES.")
+        else:
+            attempts = 0
+            while len(products) < n_target and attempts < max(500, n_target * 120):
+                attempts += 1
+                parent = rng.choice(valid_seeds)
+                rw = Chem.RWMol(parent)
+                eligible = [a.GetIdx() for a in parent.GetAtoms() if a.GetSymbol() == "C" and a.GetIsAromatic() and a.GetTotalNumHs() > 0]
+                terminals = [a.GetIdx() for a in parent.GetAtoms() if a.GetSymbol() in ("F", "Cl", "Br", "I", "C", "O", "N") and a.GetDegree() == 1 and not a.GetIsAromatic()]
+                if rng.random() < 0.65 and eligible:
+                    idx = rng.choice(eligible)
+                    new_idx = rw.AddAtom(Chem.Atom(rng.choice(edits)))
+                    rw.AddBond(idx, new_idx, Chem.BondType.SINGLE)
+                elif terminals:
+                    idx = rng.choice(terminals)
+                    original = parent.GetAtomWithIdx(idx).GetSymbol()
+                    choices = [x for x in edits if x != original]
+                    rw.GetAtomWithIdx(idx).SetAtomicNum(Chem.GetPeriodicTable().GetAtomicNumber(rng.choice(choices)))
+                else:
+                    continue
+                try:
+                    product = rw.GetMol()
+                    Chem.SanitizeMol(product)
+                    smi = Chem.MolToSmiles(product, isomericSmiles=True)
+                    if smi in seen or Descriptors.MolWt(product) > mw_limit or QED.qed(product) < qed_min:
+                        continue
+                    seen.add(smi)
+                    products.append((f"PanBrida_{len(products)+1:03d}", smi))
+                except Exception:
+                    continue
+            if len(products) < n_target:
+                st.info(f"Generated {len(products)} unique valid analogues after {attempts} attempts; filters or seed substitution sites limited diversity.")
+            st.session_state["generated"] = screen(products)
+            st.session_state["generation_attempts"] = attempts
+    if "generated" in st.session_state:
+        generated = st.session_state["generated"]
+        if not generated.empty:
+            if "Predicted model output" in generated.columns:
+                generated = generated.sort_values("Predicted model output", ascending=False)
+            else:
+                generated = generated.sort_values("QED", ascending=False)
+            show_results(generated)
+            st.caption("Ranking is by predicted model output only when a model is loaded; otherwise by QED. A high QED is not evidence of BRD4 activity.")
+
 with about:
     st.subheader("Scientific provenance")
     st.write("Molecules are standardized to RDKit canonical isomeric SMILES. Morgan fingerprints are calculated using RDKit's Morgan generator. Descriptors and QED are computed directly from molecular structures.")
     st.write("For reproducible QSAR inference, supply the exact fitted estimator, fingerprint radius, bit length, chirality settings, RDKit version, target transformation, and training-set provenance.")
-    st.write("Applicability domain, XAI/SHAP and generative-model inference are pending integration with their original fitted artifacts. They are intentionally not simulated.")
+    st.write("RDKit analogue generation is available. The previously trained SMILES-RNN generator, applicability domain and XAI/SHAP remain pending integration with their original fitted artifacts. They are intentionally not simulated.")
     st.write("PanBrida is a computational research tool, not an experimental activity assay.")
