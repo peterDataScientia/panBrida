@@ -220,10 +220,10 @@ with generation:
     st.caption("Compare 0.8, 0.9 and 1.0 using equal sample counts and independent seeds. No retraining.")
     benchmark_n = st.slider("Samples per replicate", 100, 500, 300, 50, key="benchmark_n")
     benchmark_reps = st.slider("Replicates per temperature", 2, 10, 3, key="benchmark_reps")
-    if st.button("Run temperature benchmark", disabled=checkpoint is None and not local_checkpoint.exists()):
+    if st.button("Run temperature benchmark", disabled=not local_checkpoint.exists()):
         try:
             from rnn_inference import load_generator, generate
-            model_rnn = load_generator(checkpoint.getvalue() if checkpoint is not None else local_checkpoint)
+            model_rnn = load_generator(local_checkpoint)
             rows_bench = []
             fpgen_bench = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
             progress = st.progress(0)
