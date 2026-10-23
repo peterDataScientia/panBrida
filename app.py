@@ -152,6 +152,40 @@ with generation:
             st.success(f"{len(candidates)} unique valid molecules generated from {rnn_count} samples.")
         except Exception as exc:
             st.error(f"RNN inference failed: {exc}")
+    st.divider()
+    st.subheader("Reinforcement learning (REINFORCE)")
+    st.caption("Fine-tune a fresh copy of the trained GRU using policy-gradient updates. No manual model upload. Research prototype; reward does not establish BRD4 activity.")
+    rl_steps = st.number_input("RL training steps", min_value=1, max_value=100, value=10, step=1)
+    rl_batch = st.number_input("RL trajectories per step", min_value=4, max_value=128, value=32, step=4)
+    if st.button("Train reward-guided RNN", disabled=not local_checkpoint.exists()):
+        try:
+            from rnn_inference import load_generator
+            from rl_finetune import reinforce
+            reference_path_rl = Path("data/BRD4_modeling_cohort.csv")
+            if not reference_path_rl.exists():
+                st.error("Bundled BRD4 reference missing; RL training cannot proceed.")
+            else:
+                frame_rl = pd.read_csv(reference_path_rl)
+                col_rl = next(c for c in frame_rl.columns if "smiles" in c.lower())
+                with st.spinner("Running policy-gradient updates on CPU..."):
+                    tuned, history = reinforce(load_generator(local_checkpoint), frame_rl[col_rl].dropna().astype(str).tolist(), steps=int(rl_steps), batch_size=int(rl_batch))
+                st.session_state["rl_agent"] = tuned
+                st.session_state["rl_history"] = pd.DataFrame(history)
+                st.success("REINFORCE training completed. Use the fine-tuned agent to generate molecules.")
+        except Exception as exc:
+            st.error(f"RL training failed: {exc}")
+    if "rl_history" in st.session_state:
+        st.dataframe(st.session_state["rl_history"], hide_index=True, use_container_width=True)
+        st.line_chart(st.session_state["rl_history"].set_index("Step")[["Mean reward", "Valid fraction"]])
+        if st.button("Generate with RL fine-tuned RNN"):
+            try:
+                from rnn_inference import generate
+                molecules_rl, stats_rl = generate(st.session_state["rl_agent"], count=int(rnn_count), temperature=float(rnn_temp), seed=2027)
+                st.session_state["rnn_generated"] = screen(molecules_rl)
+                st.session_state["rnn_stats"] = stats_rl
+                st.success(f"RL agent produced {len(molecules_rl)} unique valid candidates.")
+            except Exception as exc:
+                st.error(f"RL generation failed: {exc}")
     if "rnn_generated" in st.session_state:
         stats = st.session_state.get("rnn_stats")
         if stats:
