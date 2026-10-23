@@ -15,7 +15,14 @@ class SMILESRNN(nn.Module):
         return self.head(out),state
 
 def load_generator(raw):
-    ck=torch.load(io.BytesIO(raw),map_location="cpu",weights_only=True)
+    # Accept a checkpoint path (CI/local), raw bytes (Streamlit upload), or file-like object.
+    if isinstance(raw, (str, __import__("os").PathLike)):
+        source = raw
+    elif isinstance(raw, (bytes, bytearray)):
+        source = io.BytesIO(raw)
+    else:
+        source = raw
+    ck=torch.load(source,map_location="cpu",weights_only=True)
     vocab=ck["vocab"]
     if not all(x in vocab for x in ("^","$")):
         raise ValueError("Checkpoint vocabulary missing start/end tokens")
