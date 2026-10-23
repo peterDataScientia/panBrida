@@ -196,6 +196,30 @@ with generation:
                     novel = sum(s not in known for s in valid_smiles)
                     st.metric("Novel versus uploaded training structures", f"{novel}/{len(valid_smiles)} ({100*novel/len(valid_smiles):.1f}%)")
                     st.caption(f"Compared with {len(known)} distinct valid reference structures; exact canonical-SMILES novelty only.")
+                    if known:
+                        fpgen_ref = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+                        ref_fps = [fpgen_ref.GetFingerprint(Chem.MolFromSmiles(smi)) for smi in sorted(known)]
+                        audit_rows = []
+                        for smi in valid_smiles:
+                            mol = Chem.MolFromSmiles(smi)
+                            if mol is None:
+                                continue
+                            fp = fpgen_ref.GetFingerprint(mol)
+                            max_sim = max(DataStructs.BulkTanimotoSimilarity(fp, ref_fps))
+                            audit_rows.append({"SMILES": smi, "Exact_novel": smi not in known,
+                                               "Nearest_training_Tanimoto_Morgan2048": round(max_sim, 4),
+                                               "Similarity_below_0.8": max_sim < 0.8,
+                                               "Similarity_below_0.6": max_sim < 0.6})
+                        novelty_df = pd.DataFrame(audit_rows)
+                        st.metric("Novel with nearest similarity < 0.8",
+                                  f"{int((novelty_df['Exact_novel'] & novelty_df['Similarity_below_0.8']).sum())}/{len(novelty_df)}")
+                        st.metric("Novel with nearest similarity < 0.6",
+                                  f"{int((novelty_df['Exact_novel'] & novelty_df['Similarity_below_0.6']).sum())}/{len(novelty_df)}")
+                        st.dataframe(novelty_df, use_container_width=True)
+                        st.download_button("Download full novelty audit CSV",
+                                           novelty_df.to_csv(index=False).encode("utf-8"),
+                                           "panbrida_novelty_audit.csv", "text/csv")
+                        st.caption("Nearest-neighbor Tanimoto is a fingerprint similarity measure, not proof of chemical novelty or biological activity.")
             except Exception as exc:
                 st.error(f"Reference dataset audit failed: {exc}")
         show_results(st.session_state["rnn_generated"])
