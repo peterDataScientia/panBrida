@@ -11,7 +11,7 @@ on:
 jobs:
   rl-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,11 +33,11 @@ jobs:
           reference = pd.read_csv('data/BRD4_modeling_cohort.csv')['isomeric_smiles'].dropna().astype(str).tolist()
           model = load_generator('models/BRD4_generated.trained.pt')
           before = {k:v.detach().clone() for k,v in model.state_dict().items()}
-          tuned, history = reinforce(model, reference, steps=2, batch_size=8, max_length=80, seed=2026)
-          assert len(history) == 2
+          tuned, history = reinforce(model, reference, steps=30, batch_size=32, max_length=100, seed=2026)
+          assert len(history) == 30
           assert all(0 <= h['Mean reward'] <= 1 for h in history)
           assert any(not torch.equal(before[k],tuned.state_dict()[k]) for k in before), 'RL weights unchanged'
-          molecules, stats = generate(tuned,count=12,max_length=80,seed=2027)
-          assert stats['requested'] == 12
+          molecules, stats = generate(tuned,count=100,max_length=100,seed=2027)
+          assert stats['requested'] == 100
           print('REINFORCE VALIDATED', history, stats)
           PY
