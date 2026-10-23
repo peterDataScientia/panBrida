@@ -36,9 +36,12 @@ jobs:
           print('Checkpoint keys:', list(checkpoint.keys()))
           assert 'model_state' in checkpoint and 'vocab' in checkpoint
           model = load_generator(path)
-          result, stats = generate(model, count=10, seed=2026)
+          result, stats = generate(model, count=1000, temperature=0.8, seed=2026)
           print('Generation stats:', stats)
           print('Sample SMILES:', result[:5])
-          assert stats['requested'] == 10
+          assert stats['requested'] == 1000
+          assert sum(stats[k] for k in ('unfinished','invalid','duplicates','unique_valid')) == 1000
+          print('Raw validity (%):', round(100*(stats['unique_valid']+stats['duplicates'])/1000,2))
+          print('Unique-valid yield (%):', round(100*stats['unique_valid']/1000,2))
           print('CHECKPOINT VALIDATION PASSED')
           PY
