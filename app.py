@@ -151,11 +151,11 @@ with generation:
     st.caption("Default 0.8 is a hypothesis for improving validity, not yet benchmarked. Compare raw validity and diversity across temperatures.")
     local_checkpoint = Path("models/BRD4_generated.trained.pt")
     if not local_checkpoint.exists() and checkpoint is None:
-        st.info("Select the checkpoint from the Drive link above. The trained checkpoint is not yet bundled in this GitHub repository.")
+        st.info("Checkpoint not found in this deployment. Upload the trained .pt file or restore models/BRD4_generated.trained.pt.")
     if st.button("Generate with trained RNN", disabled=checkpoint is None and not local_checkpoint.exists()):
         try:
             from rnn_inference import load_generator, generate
-            generator = load_generator(checkpoint.getvalue() if checkpoint is not None else local_checkpoint.read_bytes())
+            generator = load_generator(checkpoint.getvalue() if checkpoint is not None else local_checkpoint)
             with st.spinner("Sampling trained BRD4 generator..."):
                 candidates, generation_stats = generate(generator, count=rnn_count, temperature=rnn_temp, seed=2026)
             st.session_state["rnn_generated"] = screen(candidates)
@@ -207,7 +207,7 @@ with generation:
     if st.button("Run temperature benchmark", disabled=checkpoint is None and not local_checkpoint.exists()):
         try:
             from rnn_inference import load_generator, generate
-            model_rnn = load_generator(checkpoint.getvalue() if checkpoint is not None else local_checkpoint.read_bytes())
+            model_rnn = load_generator(checkpoint.getvalue() if checkpoint is not None else local_checkpoint)
             rows_bench = []
             fpgen_bench = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
             progress = st.progress(0)
