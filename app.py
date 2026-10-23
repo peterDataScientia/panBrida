@@ -180,7 +180,8 @@ with generation:
             if similarities:
                 st.metric("Mean pairwise Tanimoto similarity (Morgan2048)", f"{np.mean(similarities):.3f}")
                 st.caption("Lower similarity suggests greater fingerprint diversity; this is not evidence of BRD4 activity.")
-        reference = st.file_uploader("Optional BRD4 training CSV for novelty audit", type=["csv"], key="rnn_reference")
+        reference_path = Path("data/BRD4_modeling_cohort.csv")
+        reference = reference_path if reference_path.exists() else st.file_uploader("BRD4 reference CSV (fallback)", type=["csv"], key="rnn_reference")
         if reference is not None and valid_smiles:
             try:
                 training = pd.read_csv(reference)
@@ -194,7 +195,7 @@ with generation:
                         if mol is not None:
                             known.add(Chem.MolToSmiles(mol, isomericSmiles=True))
                     novel = sum(s not in known for s in valid_smiles)
-                    st.metric("Novel versus uploaded training structures", f"{novel}/{len(valid_smiles)} ({100*novel/len(valid_smiles):.1f}%)")
+                    st.metric("Novel versus BRD4 reference cohort", f"{novel}/{len(valid_smiles)} ({100*novel/len(valid_smiles):.1f}%)")
                     st.caption(f"Compared with {len(known)} distinct valid reference structures; exact canonical-SMILES novelty only.")
                     if known:
                         fpgen_ref = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
