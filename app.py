@@ -11,35 +11,24 @@ from rdkit.Chem import Descriptors, QED, rdMolDescriptors, rdFingerprintGenerato
 st.set_page_config(page_title="PanBrida | BRD4 Discovery", page_icon="🧬", layout="wide")
 st.title("🧬 PanBrida")
 st.caption("BRD4 Paper 2 | Structure screening, QSAR inference and candidate prioritization")
-st.info("Trained BRD4 SMILES-RNN generation is supported. Load the saved checkpoint in the Generate tab; QSAR predictions require the separately trained SVR artifact.")
+st.info("PanBrida loads its bundled generator and BRD4 reference cohort automatically. QSAR potency prediction is enabled only when a compatible validated model is bundled.")
 
 with st.sidebar:
     st.header("QSAR configuration")
-    model_file = st.file_uploader("Trusted trained model (.joblib)", type=["joblib"], key="model")
-    metadata_file = st.file_uploader("Training metadata (.json)", type=["json"])
-    metadata = {}
-    if metadata_file:
-        try:
-            metadata = json.loads(metadata_file.getvalue().decode("utf-8"))
-            st.success("Metadata loaded")
-        except Exception as exc:
-            st.error(f"Invalid metadata: {exc}")
-    radius = st.number_input("Morgan radius", 1, 4, int(metadata.get("radius", 2)))
-    n_bits = st.number_input("Morgan bits", 128, 8192, int(metadata.get("n_bits", 1024)), step=128)
-    st.caption("The BRD4 Colab notebook references an SVR–Morgan1024 artifact; verify radius and chirality from the saved training metadata.")
-    st.markdown("**Model output:** pIC50 only if the saved model was trained on pIC50.")
+    metadata_path = Path("models/brd4_metadata.json")
+    metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
+    radius = int(metadata.get("radius", 2))
+    n_bits = int(metadata.get("n_bits", 1024))
+    st.caption(f"QSAR fingerprint configuration: Morgan radius {radius}, {n_bits} bits.")
     model = None
-    if model_file:
+    model_path = Path("models/brd4_model.joblib")
+    if model_path.exists():
         try:
-            model = joblib.load(io.BytesIO(model_file.getvalue()))
+            model = joblib.load(model_path)
         except Exception as exc:
-            st.error(f"Model loading failed: {exc}")
-    elif Path("models/brd4_model.joblib").exists():
-        try:
-            model = joblib.load("models/brd4_model.joblib")
-        except Exception as exc:
-            st.error(f"Bundled model failed: {exc}")
-    st.caption("Only load artifacts you trust: joblib can execute code.")
+            st.error(f"Bundled QSAR model failed to load: {exc}")
+    else:
+        st.caption("QSAR model not bundled; descriptor screening and RNN generation remain available.")
     st.divider()
     st.write("**Model loaded:**", "Yes" if model is not None else "No")
     st.write("**Applicability domain:**", "Not yet calibrated")
@@ -125,7 +114,8 @@ with single:
         show_results(st.session_state["results"])
 
 with batch:
-    csv = st.file_uploader("Upload CSV with a SMILES column", type=["csv"], key="csv")
+    st.caption("Optional external CSV screening. No upload is needed for built-in BRD4 generation and novelty.")
+    csv = st.file_uploader("External CSV (optional)", type=["csv"], key="csv")
     if csv:
         try:
             frame = pd.read_csv(csv)
@@ -144,18 +134,17 @@ with batch:
 with generation:
     st.subheader("Trained BRD4 SMILES-RNN")
     st.caption("Verified checkpoint format: 37-token vocabulary, 128-dimensional embeddings, 256 hidden units, 2 GRU layers. No retraining required.")
-    st.markdown("[Get the trained checkpoint from your connected Google Drive](https://drive.google.com/file/d/1XqSL8l2t4qn_VZUCa3MuX9DmnXEwELMj/view)")
-    checkpoint = st.file_uploader("Upload BRD4_generated.trained.pt", type=["pt"], key="rnn_checkpoint")
+    st.caption("The trained generator checkpoint is bundled and loaded automatically.")
     rnn_count = st.slider("RNN sampling batch size", 10, 300, 100, 10)
     rnn_temp = st.slider("Sampling temperature", 0.5, 1.5, 0.8, 0.05)
     st.caption("Default 0.8 is a hypothesis for improving validity, not yet benchmarked. Compare raw validity and diversity across temperatures.")
     local_checkpoint = Path("models/BRD4_generated.trained.pt")
-    if not local_checkpoint.exists() and checkpoint is None:
-        st.info("Checkpoint not found in this deployment. Upload the trained .pt file or restore models/BRD4_generated.trained.pt.")
-    if st.button("Generate with trained RNN", disabled=checkpoint is None and not local_checkpoint.exists()):
+    if not local_checkpoint.exists():
+        st.error("Bundled generator checkpoint is missing from deployment.")
+    if st.button("Generate with trained RNN", disabled=not local_checkpoint.exists()):
         try:
             from rnn_inference import load_generator, generate
-            generator = load_generator(checkpoint.getvalue() if checkpoint is not None else local_checkpoint)
+            generator = load_generator(local_checkpoint)
             with st.spinner("Sampling trained BRD4 generator..."):
                 candidates, generation_stats = generate(generator, count=rnn_count, temperature=rnn_temp, seed=2026)
             st.session_state["rnn_generated"] = screen(candidates)
@@ -181,7 +170,9 @@ with generation:
                 st.metric("Mean pairwise Tanimoto similarity (Morgan2048)", f"{np.mean(similarities):.3f}")
                 st.caption("Lower similarity suggests greater fingerprint diversity; this is not evidence of BRD4 activity.")
         reference_path = Path("data/BRD4_modeling_cohort.csv")
-        reference = reference_path if reference_path.exists() else st.file_uploader("BRD4 reference CSV (fallback)", type=["csv"], key="rnn_reference")
+        reference = reference_path if reference_path.exists() else None
+        if reference is None:
+            st.error("Bundled BRD4 reference cohort missing; novelty audit unavailable.")
         if reference is not None and valid_smiles:
             try:
                 training = pd.read_csv(reference)
