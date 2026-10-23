@@ -1,0 +1,44 @@
+name: Validate BRD4 checkpoint
+on:
+  push:
+    paths:
+      - '.github/workflows/validate-checkpoint.yml'
+      - 'models/BRD4_generated.trained.pt'
+      - 'rnn_inference.py'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install torch rdkit
+      - name: Inspect checkpoint and run inference
+        run: |
+          python - <<'PY'
+          import os, hashlib, torch
+          from rnn_inference import load_generator, generate
+          path = 'models/BRD4_generated.trained.pt'
+          assert os.path.isfile(path), 'Checkpoint missing'
+          size = os.path.getsize(path)
+          print('Checkpoint bytes:', size)
+          assert size > 1024, 'Checkpoint empty or too small'
+          with open(path,'rb') as f:
+              print('SHA256:', hashlib.file_digest(f,'sha256').hexdigest())
+          try:
+              checkpoint = torch.load(path, map_location='cpu', weights_only=True)
+          except Exception as e:
+              raise RuntimeError('Checkpoint could not be loaded safely') from e
+          print('Checkpoint keys:', list(checkpoint.keys()))
+          assert 'model_state' in checkpoint and 'vocab' in checkpoint
+          model = load_generator(path)
+          result, stats = generate(model, count=10, seed=2026)
+          print('Generation stats:', stats)
+          print('Sample SMILES:', result[:5])
+          assert stats['requested'] == 10
+          print('CHECKPOINT VALIDATION PASSED')
+          PY
