@@ -1,0 +1,43 @@
+name: RL smoke validation
+on:
+  push:
+    paths:
+      - 'rl_finetune.py'
+      - 'rnn_inference.py'
+      - 'app.py'
+      - 'data/BRD4_modeling_cohort.csv'
+      - '.github/workflows/rl-smoke.yml'
+  workflow_dispatch:
+jobs:
+  rl-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Check Streamlit source and train real REINFORCE update
+        env:
+          OMP_NUM_THREADS: '2'
+        run: |
+          python -m py_compile app.py rl_finetune.py rnn_inference.py
+          python - <<'PY'
+          import pandas as pd
+          import torch
+          from rnn_inference import load_generator, generate
+          from rl_finetune import reinforce
+          torch.set_num_threads(2)
+          reference = pd.read_csv('data/BRD4_modeling_cohort.csv')['isomeric_smiles'].dropna().astype(str).tolist()
+          model = load_generator('models/BRD4_generated.trained.pt')
+          before = {k:v.detach().clone() for k,v in model.state_dict().items()}
+          tuned, history = reinforce(model, reference, steps=2, batch_size=8, max_length=80, seed=2026)
+          assert len(history) == 2
+          assert all(0 <= h['Mean reward'] <= 1 for h in history)
+          assert any(not torch.equal(before[k],tuned.state_dict()[k]) for k in before), 'RL weights unchanged'
+          molecules, stats = generate(tuned,count=12,max_length=80,seed=2027)
+          assert stats['requested'] == 12
+          print('REINFORCE VALIDATED', history, stats)
+          PY
