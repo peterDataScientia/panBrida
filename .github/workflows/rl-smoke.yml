@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - 'rl_finetune.py'
+      - 'rl_compare.py'
       - 'rnn_inference.py'
       - 'app.py'
       - 'data/BRD4_modeling_cohort.csv'
@@ -41,3 +42,14 @@ jobs:
           assert stats['requested'] == 100
           print('REINFORCE VALIDATED', history, stats)
           PY
+      - name: Compare pretrained versus REINFORCE across paired seeds
+        env:
+          OMP_NUM_THREADS: '2'
+        run: python rl_compare.py
+      - name: Upload reproducible comparison and training history
+        uses: actions/upload-artifact@v4
+        with:
+          name: panbrida-rl-benchmark
+          path: |
+            rl_comparison.csv
+            rl_training_history.csv
