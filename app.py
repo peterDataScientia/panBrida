@@ -159,7 +159,49 @@ with generation:
             st.json(stats)
             st.metric("Unique-valid yield", f"{100*stats['unique_valid']/stats['requested']:.1f}%")
             st.download_button("Download generation audit", json.dumps(stats, indent=2), "panbrida_generation_audit.json", "application/json")
-        generated_df = st.session_state["rnn_generated"]
+        generated_df = st.session_state["rnn_generated"].copy()
+        if not generated_df.empty:
+            st.subheader("Reward-guided candidate selection")
+            st.caption("Post-generation reward scoring and selection (not reinforcement-learning updates to RNN weights).")
+            valid_mask = generated_df["Status"].eq("Valid")
+            if valid_mask.any():
+                reference_path_reward = Path("data/BRD4_modeling_cohort.csv")
+                known_reward = set()
+                ref_fps_reward = []
+                fpgen_reward = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+                if reference_path_reward.exists():
+                    reference_reward = pd.read_csv(reference_path_reward)
+                    ref_col = next((c for c in reference_reward.columns if "smiles" in c.lower()), None)
+                    if ref_col:
+                        for smi in reference_reward[ref_col].dropna().astype(str):
+                            mol = Chem.MolFromSmiles(smi)
+                            if mol:
+                                canonical = Chem.MolToSmiles(mol, isomericSmiles=True)
+                                if canonical not in known_reward:
+                                    known_reward.add(canonical)
+                                    ref_fps_reward.append(fpgen_reward.GetFingerprint(mol))
+                valid_rows = generated_df.loc[valid_mask].copy()
+                mols_reward = [Chem.MolFromSmiles(smi) for smi in valid_rows["SMILES"]]
+                nearest_reward = [max(DataStructs.BulkTanimotoSimilarity(fpgen_reward.GetFingerprint(mol), ref_fps_reward)) if ref_fps_reward else np.nan for mol in mols_reward]
+                valid_rows["Nearest_reference_similarity"] = nearest_reward
+                valid_rows["Exact_novel"] = [smi not in known_reward for smi in valid_rows["SMILES"]]
+                valid_rows["Novelty_reward"] = [max(0.0, 1.0 - v) if np.isfinite(v) else 0.0 for v in nearest_reward]
+                valid_rows["QED_reward"] = valid_rows["QED"].astype(float).clip(0, 1)
+                valid_rows["Property_reward"] = [float(150 <= Descriptors.MolWt(mol) <= 650 and rdMolDescriptors.CalcTPSA(mol) <= 140 and Descriptors.MolLogP(mol) <= 5) for mol in mols_reward]
+                potency_available = model is not None and "Predicted model output" in valid_rows.columns
+                if potency_available:
+                    predictions_reward = pd.to_numeric(valid_rows["Predicted model output"], errors="coerce")
+                    potency_available = predictions_reward.notna().all()
+                if potency_available:
+                    valid_rows["Potency_reward"] = (1 / (1 + np.exp(-np.clip((predictions_reward - 6.0), -30, 30)))).to_numpy()
+                    valid_rows["Reward"] = 0.40 * valid_rows["Potency_reward"] + 0.25 * valid_rows["Novelty_reward"] + 0.20 * valid_rows["QED_reward"] + 0.15 * valid_rows["Property_reward"]
+                    st.caption("Reward = 0.40 potency + 0.25 fingerprint novelty + 0.20 QED + 0.15 property compliance. Potency is model-predicted, not experimental.")
+                else:
+                    valid_rows["Reward"] = 0.45 * valid_rows["Novelty_reward"] + 0.35 * valid_rows["QED_reward"] + 0.20 * valid_rows["Property_reward"]
+                    st.warning("QSAR potency model unavailable. Reward uses novelty, QED and property compliance only; it is NOT BRD4 potency optimization.")
+                valid_rows = valid_rows.sort_values("Reward", ascending=False)
+                st.dataframe(valid_rows, use_container_width=True, hide_index=True)
+                st.download_button("Download reward-ranked candidates", valid_rows.to_csv(index=False).encode(), "panbrida_reward_ranked.csv", "text/csv")
         valid_smiles = generated_df.loc[generated_df["Status"] == "Valid", "SMILES"].tolist()
         if len(valid_smiles) > 1:
             fps = [rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048).GetFingerprint(Chem.MolFromSmiles(s)) for s in valid_smiles]
