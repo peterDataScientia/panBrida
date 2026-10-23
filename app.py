@@ -135,7 +135,7 @@ with generation:
     st.subheader("Trained BRD4 SMILES-RNN")
     st.caption("Verified checkpoint format: 37-token vocabulary, 128-dimensional embeddings, 256 hidden units, 2 GRU layers. No retraining required.")
     st.caption("The trained generator checkpoint is bundled and loaded automatically.")
-    rnn_count = st.slider("RNN sampling batch size", 10, 300, 100, 10)
+    rnn_count = st.number_input("RNN sampling batch size", min_value=10, max_value=10000, value=1000, step=100, help="Larger batches take longer; generation and novelty calculations may be resource-intensive.")
     rnn_temp = st.slider("Sampling temperature", 0.5, 1.5, 0.8, 0.05)
     st.caption("Default 0.8 is a hypothesis for improving validity, not yet benchmarked. Compare raw validity and diversity across temperatures.")
     local_checkpoint = Path("models/BRD4_generated.trained.pt")
